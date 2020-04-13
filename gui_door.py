@@ -9,13 +9,13 @@ MQTT_BROKER = 'mqtt.item.ntnu.no'
 MQTT_PORT = 1883
 
 # TODO: choose proper topics for communication
-MQTT_TOPIC_INPUT = 'ttm4115/team_x/command'
-MQTT_TOPIC_OUTPUT = 'ttm4115/team_x/answer'
+MQTT_TOPIC_INPUT = 'ttm4115/team_1/command'
+MQTT_TOPIC_OUTPUT = 'ttm4115/team_1/answer'
 
 
-class TimerCommandSenderComponent:
+class DoorComponent:
     """
-    The component to send voice commands.
+    The component to represent the door.
     """
 
     def on_connect(self, client, userdata, flags, rc):
@@ -125,4 +125,4 @@ formatter = logging.Formatter('%(asctime)s - %(name)-12s - %(levelname)-8s - %(m
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-t = TimerCommandSenderComponent()
+t = DoorComponent()
