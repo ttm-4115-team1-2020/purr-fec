@@ -3,20 +3,17 @@ import logging
 from threading import Thread
 import json
 from appJar import gui
+from stmpy import Machine, Driver
 
-# TODO: choose proper MQTT broker address
+# MQTT broker address
 MQTT_BROKER = 'mqtt.item.ntnu.no'
 MQTT_PORT = 1883
 
-# TODO: choose proper topics for communication
+# Topics for communication
 MQTT_TOPIC_INPUT = 'ttm4115/team_1/command'
 MQTT_TOPIC_OUTPUT = 'ttm4115/team_1/answer'
 
-
 class DoorComponent:
-    """
-    The component to represent the door.
-    """
 
     def on_connect(self, client, userdata, flags, rc):
         # we just log that we are connected
@@ -45,72 +42,51 @@ class DoorComponent:
         self.create_gui()
 
     def create_gui(self):
-        self.app = gui()
-
-        def extract_timer_name(label):
-            label = label.lower()
-            if 'spaghetti' in label: return 'spaghetti'
-            if 'green tea' in label: return 'green tea'
-            if 'soft eggs' in label: return 'soft eggs'
-            return None
-
-        def extract_duration_seconds(label):
-            label = label.lower()
-            if 'spaghetti' in label: return 600
-            if 'green tea' in label: return 120
-            if 'soft eggs' in label: return 240
-            return None
+        self.app = gui("Door GUI")
 
         def publish_command(command):
             payload = json.dumps(command)
             self._logger.info(command)
             self.mqtt_client.publish(MQTT_TOPIC_INPUT, payload=payload, qos=2)
-
-        self.app.startLabelFrame('Starting timers:')
-        def on_button_pressed_start(title):
-            name = extract_timer_name(title)
-            duration = extract_duration_seconds(title)
-            command = {"command": "new_timer", "name": name, "duration": duration}
-            publish_command(command)
-        self.app.addButton('Start Spaghetti Timer', on_button_pressed_start)
-        self.app.addButton('Start Green Tea Timer', on_button_pressed_start)
-        self.app.addButton('Start Soft Eggs Timer', on_button_pressed_start)
+        
+        self.app.startLabelFrame('Door Status:')
+        self.app.addLabel('title1', 'Locked')
+        self.app.addLabel('title2', 'Closed')
         self.app.stopLabelFrame()
 
-        self.app.startLabelFrame('Stopping timers:')
-        def on_button_pressed_stop(title):
-            name = extract_timer_name(title)
-            command = {"command": "cancel_timer", "name": name}
-            publish_command(command)
-        self.app.addButton('Cancel Spaghetti Timer', on_button_pressed_stop)
-        self.app.addButton('Cancel Green Tea Timer', on_button_pressed_stop)
-        self.app.addButton('Cancel Soft Eggs Timer', on_button_pressed_stop)
+        self.app.startLabelFrame('Door Interactions:')
+        def on_button_pressed_push(button):
+            self.stm.send('door_pushed')
+        self.app.addButton('Cat pushes the door', on_button_pressed_push)
+        def on_button_pressed_close(button):
+            self.stm.send('door_closed')
+        self.app.addButton('The door closes', on_button_pressed_close)
         self.app.stopLabelFrame()
+    
+    def unlock(self):
+        self.app.setLabel('title1', 'Unlocked')
+    
+    def door_opened(self):
+        self.app.setLabel('title2', 'Opened')
+    
+    def lock(self):
+        self.app.setLabel('title1', 'Locked')
+        
+ 
+t0 = {'source': 'initial', 'target': 'closed_locked'}
+t1 = {'trigger': 'rfid', 'source': 'closed_locked', 'target': 'closed_unlocked',
+      'effect': 'unlock; start_timer("t", "5000")'}
+t2 = {'trigger': 'door_pushed', 'source': 'closed_unlocked', 'target': 'open_unlocked',
+      'effect': 'stop_timer("t"); door_opened'}
+t3 = {'trigger': 'door_closed', 'source': 'open_unlocked', 'target': 'closed_unlocked',
+      'effect': 'start_timer("t", "5000")'}
+t4 = {'trigger': 't', 'source': 'closed_unlocked', 'target': 'closed_locked',
+      'effect': 'lock'}
 
-        self.app.startLabelFrame('Asking for status:')
-        def on_button_pressed_status(title):
-            name = extract_timer_name(title)
-            if name is None:
-                command = {"command": "status_all_timers"}
-            else:
-                command = {"command": "status_single_timer", "name": name}
-            publish_command(command)
-        self.app.addButton('Get All Timers Status', on_button_pressed_status)
-        self.app.addButton('Get Spaghetti Timer Status', on_button_pressed_status)
-        self.app.addButton('Get Green Tea Timer Status', on_button_pressed_status)
-        self.app.addButton('Get Soft Eggs Timer Status', on_button_pressed_status)
-        self.app.stopLabelFrame()
-
-        self.app.go()
-
-
-    def stop(self):
-        """
-        Stop the component.
-        """
-        # stop the MQTT client
-        self.mqtt_client.loop_stop()
-
+s1 = {'name': 'closed_locked',
+      'entry': 'lock'}
+s2 = {'name': 'closed_unlocked'}
+s3 = {'name': 'open_unlocked'}
 
 # logging.DEBUG: Most fine-grained logging, printing everything
 # logging.INFO:  Only the most important informational log items
@@ -125,4 +101,12 @@ formatter = logging.Formatter('%(asctime)s - %(name)-12s - %(levelname)-8s - %(m
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-t = DoorComponent()
+d = DoorComponent()
+
+stm_door = Machine(name='stm_door', transitions=[t0, t1, t2, t3, t4], obj=d, states=[s1, s2, s3])
+d.stm = stm_door
+driver = Driver()
+driver.add_machine(stm_door)
+driver.start()
+
+d.app.go()
